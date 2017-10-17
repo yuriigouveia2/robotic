@@ -3,11 +3,9 @@ function [isUpdated, estPose, estCov] = ...
 
 %[x y teta]
 InitialPose = [0 0 0];
-estPose = InitialPose;
 
 %covariancia/ Matriz 3x3 de covariancia de x, y e teta
 InitialCovariance = eye(3);
-estCov = InitialCovariance;
 
 %Modelo de movimento de odometria
 MotionModel = robotics.OdometryMotionModel;
@@ -46,12 +44,8 @@ if difPose(1) >  UpdateThresholds(1) || ...
         difPose(2) >  UpdateThresholds(2) ||...
         difPose(3) >  UpdateThresholds(3)
     
-    isUpdated = true;
-    estPose = 0;%MUDAR
-    estCov = 0;%MUDAR
+    
 end
-
-
 %isUpdated = obj.isUpdated;%VER AQUI
 %[estPose estCov] = getHypothesis;%VER AQUI
 
