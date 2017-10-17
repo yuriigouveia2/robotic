@@ -36,6 +36,7 @@ ResamplingInterval = 1;
 
 %Variavel que dira se houve mudança em relaçao a uma posiçao anterior
 isUpdated = false;
+
 %Etapa de previsao, correçao e reamostragem
 numranges = length(ranges);
 %update(numranges,ranges,angles,pose);%VER AQUI
@@ -59,18 +60,7 @@ end
 end
 
 
-function [newPose, newCov] = getHypothesis(pose, cov)
-            %getHypothesis Get estimated pose and covariance
-            %   getHypothesis(MCLOBJ) returns the estimated pose and
-            %   covariance of the highest weighted cluster of particles
-            %   from the robotics.internal.algs.MonteCarloLocalization
-            %   object MCLOBJ.
-            
-            posecov = mclObj.getHypothesis;
-            posedata = reshape(posecov, 3, [])';
-            newPose = posedata(1,:);
-            newCov = posedata(2:4, :);
-        end
+
 
 
 
