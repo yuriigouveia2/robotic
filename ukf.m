@@ -1,111 +1,293 @@
-function [x,P]=ukf(fstate,x,P,hmeas,z,Q,R)
-% UKF   Unscented Kalman Filter for nonlinear dynamic systems
-% [x, P] = ukf(f,x,P,h,z,Q,R) returns state estimate, x and state covariance, P 
-% for nonlinear dynamic system (for simplicity, noises are assumed as additive):
-%           x_k+1 = f(x_k) + w_k
-%           z_k   = h(x_k) + v_k
-% where w ~ N(0,Q) meaning w is gaussian noise with covariance Q
-%       v ~ N(0,R) meaning v is gaussian noise with covariance R
-% Inputs:   f: function handle for f(x)
-%           x: "a priori" state estimate
-%           P: "a priori" estimated state covariance
-%           h: fanction handle for h(x)
-%           z: current measurement
-%           Q: process noise covariance 
-%           R: measurement noise covariance
-% Output:   x: "a posteriori" state estimate
-%           P: "a posteriori" state covariance
+% -------------------------------------------------------------------------
 %
-% Example:
-%{
-n=3;      %number of state
-q=0.1;    %std of process 
-r=0.1;    %std of measurement
-Q=q^2*eye(n); % covariance of process
-R=r^2;        % covariance of measurement  
-f=@(x)[x(2);x(3);0.05*x(1)*(x(2)+x(3))];  % nonlinear state equations
-h=@(x)x(1);                               % measurement equation
-s=[0;0;1];                                % initial state
-x=s+q*randn(3,1); %initial state          % initial state with noise
-P = eye(n);                               % initial state covraiance
-N=20;                                     % total dynamic steps
-xV = zeros(n,N);          %estmate        % allocate memory
-sV = zeros(n,N);          %actual
-zV = zeros(1,N);
-for k=1:N
-  z = h(s) + r*randn;                     % measurments
-  sV(:,k)= s;                             % save actual state
-  zV(k)  = z;                             % save measurment
-  [x, P] = ukf(f,x,P,h,z,Q,R);            % ekf 
-  xV(:,k) = x;                            % save estimate
-  s = f(s) + q*randn(3,1);                % update process 
-end
-for k=1:3                                 % plot results
-  subplot(3,1,k)
-  plot(1:N, sV(k,:), '-', 1:N, xV(k,:), '--')
-end
-%}
-% Reference: Julier, SJ. and Uhlmann, J.K., Unscented Filtering and
-% Nonlinear Estimation, Proceedings of the IEEE, Vol. 92, No. 3,
-% pp.401-422, 2004. 
+% File : Unscented KalmanFilterLocalization.m
 %
-% By Yi Cao at Cranfield University, 04/01/2008
+% Discription : Mobible robot localization sample code with
+%               Unscented Kalman Filter (UKF)
 %
-L=numel(x);                                 %numer of states
-m=numel(z);                                 %numer of measurements
-alpha=1e-3;                                 %default, tunable
-ki=0;                                       %default, tunable
-beta=2;                                     %default, tunable
-lambda=alpha^2*(L+ki)-L;                    %scaling factor
-c=L+lambda;                                 %scaling factor
-Wm=[lambda/c 0.5/c+zeros(1,2*L)];           %weights for means
-Wc=Wm;
-Wc(1)=Wc(1)+(1-alpha^2+beta);               %weights for covariance
-c=sqrt(c);
-X=sigmas(x,P,c);                            %sigma points around x
-[x1,X1,P1,X2]=ut(fstate,X,Wm,Wc,L,Q);          %unscented transformation of process
-% X1=sigmas(x1,P1,c);                         %sigma points around x1
-% X2=X1-x1(:,ones(1,size(X1,2)));             %deviation of X1
-[z1,Z1,P2,Z2]=ut(hmeas,X1,Wm,Wc,m,R);       %unscented transformation of measurments
-P12=X2*diag(Wc)*Z2';                        %transformed cross-covariance
-K=P12*inv(P2);
-x=x1+K*(z-z1);                              %state update
-P=P1-K*P12';                                %covariance update
+% Environment : Matlab
+%
+% Author : Atsushi Sakai
+%
+% Copyright (c): 2014 Atsushi Sakai
+%
+% License : Modified BSD Software License Agreement
+% -------------------------------------------------------------------------
+ 
+function [] = UnscentedKalmanFilterLocalization()
+ 
+close all;
+clear all;
+ 
+disp('Unscented Kalman Filter (UKF) sample program start!!')
+ 
+time = 0;
+endtime = 60; % [sec]
+global dt;
+dt = 0.1; % [sec]
+ 
+nSteps = ceil((endtime - time)/dt);
+ 
+result.time=[];
+result.xTrue=[];
+result.xd=[];
+result.xEst=[];
+result.z=[];
+result.PEst=[];
+result.u=[];
 
-function [y,Y,P,Y1]=ut(f,X,Wm,Wc,n,R)
-%Unscented Transformation
-%Input:
-%        f: nonlinear map
-%        X: sigma points
-%       Wm: weights for mean
-%       Wc: weights for covraiance
-%        n: numer of outputs of f
-%        R: additive covariance
-%Output:
-%        y: transformed mean
-%        Y: transformed smapling points
-%        P: transformed covariance
-%       Y1: transformed deviations
+% State Vector [x y yaw v]'
+xEst=[0 0 0 0]';
+ 
+% True State
+xTrue=xEst;
+ 
+% Dead Reckoning
+xd=xTrue;
+ 
+% Observation vector [x y yaw v]'
+z=[0 0 0 0]';
 
-L=size(X,2);
-y=zeros(n,1);
-Y=zeros(n,L);
-for k=1:L                   
-    Y(:,k)=f(X(:,k));       
-    y=y+Wm(k)*Y(:,k);       
+% Covariance Matrix for predict
+Q=diag([0.1 0.1 toRadian(1) 0.05]).^2;
+ 
+% Covariance Matrix for observation
+R=diag([1.5 1.5 toRadian(3) 0.05]).^2;
+
+% Simulation parameter
+global Qsigma
+Qsigma=diag([0.1 toRadian(20)]).^2;
+ 
+global Rsigma
+Rsigma=diag([1.5 1.5 toRadian(3) 0.05]).^2;
+ 
+% UKF Parameter
+alpha=0.001;
+beta =2;
+kappa=0;
+
+n=length(xEst);%size of state vector
+lamda=alpha^2*(n+kappa)-n;
+
+%calculate weights
+wm=[lamda/(lamda+n)];
+wc=[(lamda/(lamda+n))+(1-alpha^2+beta)];
+for i=1:2*n
+    wm=[wm 1/(2*(n+lamda))];
+    wc=[wc 1/(2*(n+lamda))];
 end
-Y1=Y-y(:,ones(1,L));
-P=Y1*diag(Wc)*Y1'+R;          
+gamma=sqrt(n+lamda);
 
-function X=sigmas(x,P,c)
-%Sigma points around reference point
-%Inputs:
-%       x: reference point
-%       P: covariance
-%       c: coefficient
-%Output:
-%       X: Sigma points
+PEst = eye(4);
+%movcount=0;
+tic;
+% Main loop
+for i=1 : nSteps
+    time = time + dt;
+    % Input
+    u=doControl(time);
+    % Observation
+    [z,xTrue,xd,u]=Observation(xTrue, xd, u);
+    
+    % ------ Unscented Kalman Filter --------
+    % Predict 
+    sigma=GenerateSigmaPoints(xEst,PEst,gamma);
+    sigma=PredictMotion(sigma,u);
+    xPred=(wm*sigma')';
+    PPred=CalcSimgaPointsCovariance(xPred,sigma,wc,Q);
+    
+    % Update
+    y = z - h(xPred);
+    sigma=GenerateSigmaPoints(xPred,PPred,gamma);
+    zSigma=PredictObservation(sigma);
+    zb=(wm*sigma')';
+    St=CalcSimgaPointsCovariance(zb,zSigma,wc,R);
+    Pxz=CalcPxz(sigma,xPred,zSigma,zb,wc);
+    K=Pxz*inv(St);
+    xEst = xPred + K*y;
+    PEst=PPred-K*St*K';
+    
+    % Simulation Result
+    result.time=[result.time; time];
+    result.xTrue=[result.xTrue; xTrue'];
+    result.xd=[result.xd; xd'];
+    result.xEst=[result.xEst;xEst'];
+    result.z=[result.z; z'];
+    result.PEst=[result.PEst; diag(PEst)'];
+    result.u=[result.u; u'];
+    
+    %Animation (remove some flames)
+    if rem(i,5)==0 
+        plot(xTrue(1),xTrue(2),'.b');hold on;
+        plot(z(1),z(2),'.g');hold on;
+        plot(xd(1),xd(2),'.k');hold on;
+        plot(xEst(1),xEst(2),'.r');hold on;
+        ShowErrorEllipse(xEst,PEst);
+        axis equal;
+        grid on;
+        drawnow;
+        %movcount=movcount+1;
+        %mov(movcount) = getframe(gcf);% ?A?j???[?V?????~t???[?????Q?b?g????
+    end
+    
+    
+end
+toc
 
-A = c*chol(P)';
-Y = x(:,ones(1,numel(x)));
-X = [x Y+A Y-A]; 
+%?A?j???[?V???????
+%movie2avi(mov,'movie.avi');
+ 
+DrawGraph(result);
+
+
+
+function ShowErrorEllipse(xEst,PEst)
+%?????U?~???v?Z???A?\????????
+Pxy=PEst(1:2,1:2);%x,y??????U????
+[eigvec, eigval]=eig(Pxy);%?rL?l??rL?x?N?g????v?Z
+%?rL?l????????~C???f?b?N?X??T??
+if eigval(1,1)>=eigval(2,2)
+    bigind=1;
+    smallind=2;
+else
+    bigind=2;
+    smallind=1;
+end
+
+chi=9.21;%????~?~J?C?????z?l?@99%
+
+%??~?`??
+t=0:10:360;
+a=sqrt(eigval(bigind,bigind)*chi);
+b=sqrt(eigval(smallind,smallind)*chi);
+x=[a*cosd(t);
+   b*sind(t)];
+%????~?°p?x???v?Z
+angle = atan2(eigvec(bigind,2),eigvec(bigind,1));
+if(angle < 0)
+    angle = angle + 2*pi;
+end
+
+%????~???]
+R=[cos(angle) sin(angle);
+   -sin(angle) cos(angle)];
+x=R*x;
+plot(x(1,:)+xEst(1),x(2,:)+xEst(2))
+
+function sigma=PredictMotion(sigma,u)
+% Sigma Points predition with motion model
+for i=1:length(sigma(1,:))
+    sigma(:,i)=f(sigma(:,i),u);
+end
+
+function sigma=PredictObservation(sigma)
+% Sigma Points predition with observation model
+for i=1:length(sigma(1,:))
+    sigma(:,i)=h(sigma(:,i));
+end
+
+function P=CalcSimgaPointsCovariance(xPred,sigma,wc,N)
+nSigma=length(sigma(1,:));
+d=sigma-repmat(xPred,1,nSigma);
+P=N;
+for i=1:nSigma
+    P=P+wc(i)*d(:,i)*d(:,i)';
+end
+
+function P=CalcPxz(sigma,xPred,zSigma,zb,wc)
+nSigma=length(sigma(1,:));
+dx=sigma-repmat(xPred,1,nSigma);
+dz=zSigma-repmat(zb,1,nSigma);
+P=zeros(length(sigma(:,1)));
+for i=1:nSigma
+    P=P+wc(i)*dx(:,i)*dz(:,i)';
+end
+
+function sigma=GenerateSigmaPoints(xEst,PEst,gamma)
+sigma=xEst;
+Psqrt=sqrtm(PEst);
+n=length(xEst);
+%Positive direction
+for ip=1:n
+    sigma=[sigma xEst+gamma*Psqrt(:,ip)];
+end
+%Negative direction
+for in=1:n
+    sigma=[sigma xEst-gamma*Psqrt(:,in)];
+end
+
+function x = f(x, u)
+% Motion Model
+ 
+global dt;
+ 
+F = [1 0 0 0
+    0 1 0 0
+    0 0 1 0
+    0 0 0 0];
+ 
+B = [
+    dt*cos(x(3)) 0
+    dt*sin(x(3)) 0
+    0 dt
+    1 0];
+  
+x= F*x+B*u;
+
+function z = h(x)
+%Observation Model
+
+H = [1 0 0 0
+    0 1 0 0
+    0 0 1 0
+    0 0 0 1 ];
+ 
+z=H*x;
+
+function u = doControl(time)
+%Calc Input Parameter
+T=10; % [sec]
+ 
+% [V yawrate]
+V=1.0; % [m/s]
+yawrate = 5; % [deg/s]
+ 
+u =[ V*(1-exp(-time/T)) toRadian(yawrate)*(1-exp(-time/T))]';
+ 
+ 
+%Calc Observation from noise prameter
+function [z, x, xd, u] = Observation(x, xd, u)
+global Qsigma;
+global Rsigma;
+ 
+x=f(x, u);% Ground Truth
+u=u+Qsigma*randn(2,1);%add Process Noise
+xd=f(xd, u);% Dead Reckoning
+z=h(x+Rsigma*randn(4,1));%Simulate Observation
+
+
+function []=DrawGraph(result)
+%Plot Result
+ 
+figure(1);
+x=[ result.xTrue(:,1:2) result.xEst(:,1:2) result.z(:,1:2)];
+set(gca, 'fontsize', 16, 'fontname', 'times');
+plot(x(:,5), x(:,6),'.g','linewidth', 4); hold on;
+plot(x(:,1), x(:,2),'-.b','linewidth', 4); hold on;
+plot(x(:,3), x(:,4),'r','linewidth', 4); hold on;
+plot(result.xd(:,1), result.xd(:,2),'--k','linewidth', 4); hold on;
+ 
+title('UKF Localization Result', 'fontsize', 16, 'fontname', 'times');
+xlabel('X (m)', 'fontsize', 16, 'fontname', 'times');
+ylabel('Y (m)', 'fontsize', 16, 'fontname', 'times');
+legend('Ground Truth','GPS','Dead Reckoning','UKF');
+grid on;
+axis equal;
+ 
+function radian = toRadian(degree)
+% degree to radian
+radian = degree/180*pi;
+
+function degree = toDegree(radian)
+% radian to degree
+degree = radian/pi*180;
