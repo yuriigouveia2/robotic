@@ -1,4 +1,11 @@
-function [isUpdated, estPose, estCov] = ...
+%Exemplo
+%pose = [0 0 0];
+%ranges = 10*ones(1,300);
+%ranges(1,130:170) = 1;
+%angles = linspace(-pi/2,pi/2,300);
+%[nPose nCov] = AMCL(pose,  ranges, angles);
+
+function [estPose, estCov] = ...
     AMCL(pose, ranges, angles)
 
 %[x y teta]
@@ -9,46 +16,9 @@ estPose = InitialPose;
 InitialCovariance = eye(3);
 estCov = InitialCovariance;
 
-%Modelo de movimento de odometria
-MotionModel = robotics.OdometryMotionModel;
-
-%designar um mapa de ocupaçao (grid occupancy map) com um modelo de sensor
-rangeFinderModel = robotics.LikelihoodFieldSensorModel;
-%rangeFinderModel.Limits = [0.45 8];
-rangeFinderModel.Map = robotics.OccupancyGrid(zeros(200,200), 20);
-SensorModel = rangeFinderModel;
-
-%localizaçao global
-GlobalLocalization = false;
-
 %numero de particulas [MIN MAX], serao usadas pelo MCL
 ParticleLimits = [500 5000];
 
-
-%Mudança minima dos estados do robo [x,y,teta] para que aja uma 
-%atualizaçao das particulas do filtro.
-UpdateThresholds = [0.2, 0.2, 0.2];
-
-%Intervalo que representa o num de atualizaçoes do filtro a ser feito
-%antes dos reescalonamento das particulas
-ResamplingInterval = 1;
-
-%Variavel que dira se houve mudança em relaçao a uma posiçao anterior
-isUpdated = false;
-
-%Etapa de previsao, correçao e reamostragem
-numranges = length(ranges);
-%update(numranges,ranges,angles,pose);%VER AQUI
-
-difPose = abs(pose - InitialPose);
-%Gera as saidas
-%if difPose(1) >  UpdateThresholds(1) || ...
-%        difPose(2) >  UpdateThresholds(2) ||...
-%        difPose(3) >  UpdateThresholds(3)
-    
-    isUpdated = true;
-    
-    %Aplicando o filtro de particulas
     [posePF estCov] = PF(max(ParticleLimits), pose, InitialCovariance);
     sum = [0 0 0];
     
@@ -58,13 +28,7 @@ difPose = abs(pose - InitialPose);
     sum(3) = sum(3) + posePF(i,3);
     end
     
-    estPose = sum;
-%end
-
-
-%isUpdated = obj.isUpdated;%VER AQUI
-%[estPose estCov] = getHypothesis;%VER AQUI
-
+    estPose = sum/length(posePF);
 
 end
 
